@@ -1,0 +1,12 @@
+pandas>=2.2,<3
+openpyxl>=3.1,<4
+requests>=2.32,<3
+Pillow>=10.4,<12
+opencv-python-headless>=4.10,<5
+google-genai>=1.30,<2
+google-api-python-client>=2.180,<3
+google-auth-httplib2>=0.2,<1
+google-auth-oauthlib>=1.2,<2
+streamlit>=1.48,<2
+python-dotenv>=1.1,<2
+pdfplumber>=0.11,<1

@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+credentials/token.json
+credentials/*.json
+output/
+*.log
+.DS_Store
+.streamlit/secrets.toml
