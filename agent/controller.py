@@ -204,7 +204,7 @@ def run_agent(
                     selected_eval = evaluation
 
                 # ------------------------------------------
-                # Accept immediately if threshold reached
+                # Accept immediately
                 # ------------------------------------------
 
                 if evaluation.get("decision") == "ACCEPT":
@@ -257,9 +257,11 @@ def run_agent(
 
             row["Image Processed"] = "Yes"
             row["Output File"] = str(path)
+
             row["Output Size Bytes"] = metadata[
                 "size_bytes"
             ]
+
             row["Dimensions"] = (
                 f"{metadata['width']}x"
                 f"{metadata['height']}"
@@ -301,9 +303,20 @@ def run_agent(
 
                         last_error = exc
 
-                        error_details = (
-                            f"{type(exc).__name__}: {repr(exc)}"
-                        )
+                        try:
+                            error_details = (
+                                f"{type(exc).__name__}: "
+                                f"status={exc.resp.status} "
+                                f"reason={exc.reason} "
+                                f"details="
+                                f"{exc.content.decode('utf-8', errors='replace')}"
+                            )
+
+                        except Exception:
+                            error_details = (
+                                f"{type(exc).__name__}: "
+                                f"{repr(exc)}"
+                            )
 
                         progress(
                             f"Drive upload failed "
@@ -317,23 +330,31 @@ def run_agent(
                             )
 
                 if not upload_success:
+
                     raise RuntimeError(
-                        "Google Drive upload failed after 3 attempts: "
+                        "Google Drive upload failed "
+                        "after 3 attempts: "
                         f"{type(last_error).__name__}: "
                         f"{repr(last_error)}"
                     )
+
             # ==================================================
             # FINAL STATUS
             # ==================================================
 
             if row["Uploaded"] == "Yes":
+
                 row["Status"] = "Success"
+
             else:
+
                 row["Status"] = (
                     "Processed - Drive not configured"
                 )
 
-            progress(row["Status"])
+            progress(
+                row["Status"]
+            )
 
         except Exception as exc:
 
@@ -374,7 +395,7 @@ def run_agent(
                 drive_folder_id,
             )
 
-        except Exception as exc:
+        except Exception:
 
             # Keep local report even if Drive report upload fails.
             pass
