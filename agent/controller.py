@@ -11,11 +11,7 @@ from config.settings import (
     BLUR_THRESHOLD,
 )
 
-from agent.search import (
-    search_wikimedia,
-    download_image,
-)
-
+from agent.search import search_wikimedia, download_image
 from agent.evaluator import evaluate_image
 from agent.processor import process_image
 from agent.validator import passes_basic_quality
@@ -23,7 +19,6 @@ from agent.reporter import save_report
 
 
 def load_food_items(excel_path: Path) -> list[str]:
-
     df = pd.read_excel(excel_path)
 
     candidates = [
@@ -34,18 +29,13 @@ def load_food_items(excel_path: Path) -> list[str]:
     ]
 
     column = next(
-        (
-            c
-            for c in candidates
-            if c in df.columns
-        ),
+        (c for c in candidates if c in df.columns),
         None,
     )
 
     if column is None:
         raise ValueError(
-            "Excel must contain an "
-            "'item_name' or 'Food Item' column."
+            "Excel must contain an 'item_name' or 'Food Item' column."
         )
 
     return [
@@ -63,7 +53,6 @@ def run_agent(
     drive_folder_id: str = "",
     progress_callback=None,
 ):
-
     food_items = load_food_items(excel_path)
 
     rows = []
@@ -74,19 +63,15 @@ def run_agent(
         exist_ok=True,
     )
 
-    total_items = len(food_items)
+    total = len(food_items)
 
-    for index, food_name in enumerate(
-        food_items,
-        start=1,
-    ):
+    for index, food_name in enumerate(food_items, start=1):
 
         def progress(message):
-
             if progress_callback:
                 progress_callback(
                     index,
-                    total_items,
+                    total,
                     food_name,
                     message,
                 )
@@ -106,14 +91,11 @@ def run_agent(
         }
 
         try:
-
             # ==================================================
             # SEARCH
             # ==================================================
 
-            progress(
-                "Searching candidate images..."
-            )
+            progress("Searching candidate images...")
 
             candidates = search_wikimedia(
                 food_name,
@@ -121,23 +103,19 @@ def run_agent(
             )
 
             if not candidates:
-
                 raise RuntimeError(
-                    "No image candidates found after "
-                    "retrying Wikimedia searches."
+                    "No image candidates found."
                 )
 
             row["Image Found"] = "Yes"
 
             # ==================================================
-            # CANDIDATE EVALUATION
+            # EVALUATION
             # ==================================================
 
             selected = None
             selected_bytes = None
             selected_eval = None
-
-            best_score = -1
 
             for n, candidate in enumerate(
                 candidates,
@@ -149,158 +127,127 @@ def run_agent(
                     f"{n}/{len(candidates)}..."
                 )
 
-                # ----------------------------------------------
-                # DOWNLOAD
-                # ----------------------------------------------
+                # ------------------------------------------
+                # Download
+                # ------------------------------------------
 
                 try:
+                    raw = download_image(candidate)
 
-                    raw = download_image(
-                        candidate
-                    )
-
-                except Exception as download_error:
-
+                except Exception as exc:
                     progress(
-                        f"Candidate {n} download failed; "
-                        f"trying next candidate..."
+                        f"Candidate {n} download failed: "
+                        f"{exc}"
                     )
-
                     continue
 
-                # ----------------------------------------------
-                # BASIC QUALITY
-                # ----------------------------------------------
+                # ------------------------------------------
+                # Basic quality check
+                # ------------------------------------------
 
                 try:
-
-                    basic_ok, stats = (
-                        passes_basic_quality(
-                            raw,
-                            blur_threshold,
-                        )
+                    basic_ok, stats = passes_basic_quality(
+                        raw,
+                        blur_threshold,
                     )
 
-                except Exception:
-
-                    basic_ok = False
+                except Exception as exc:
+                    progress(
+                        f"Candidate {n} quality check failed: "
+                        f"{exc}"
+                    )
+                    continue
 
                 if not basic_ok:
-
                     progress(
-                        f"Candidate {n} failed basic "
-                        f"quality check."
+                        f"Candidate {n} failed basic quality check."
                     )
-
                     continue
 
-                # ----------------------------------------------
-                # AI EVALUATION
-                # ----------------------------------------------
+                # ------------------------------------------
+                # AI evaluation
+                # ------------------------------------------
 
                 try:
-
                     evaluation = evaluate_image(
                         food_name,
                         raw,
                         threshold,
                     )
 
-                except Exception as evaluation_error:
-
+                except Exception as exc:
                     progress(
-                        f"Candidate {n} AI evaluation "
-                        f"failed; trying next candidate..."
+                        f"Candidate {n} AI evaluation failed: "
+                        f"{exc}"
                     )
-
                     continue
 
-                score = float(
-                    evaluation.get(
+                score = evaluation.get(
+                    "overall_score",
+                    0,
+                )
+
+                # ------------------------------------------
+                # Keep best candidate
+                # ------------------------------------------
+
+                if (
+                    selected_eval is None
+                    or score
+                    > selected_eval.get(
                         "overall_score",
                         0,
                     )
-                    or 0
-                )
-
-                # Save the best candidate even if it
-                # doesn't immediately meet the threshold.
-                if score > best_score:
-
-                    best_score = score
-
+                ):
                     selected = candidate
                     selected_bytes = raw
                     selected_eval = evaluation
 
-                # Stop immediately when we have a valid
-                # accepted candidate.
-                if (
-                    evaluation.get("decision")
-                    == "ACCEPT"
-                ):
+                # ------------------------------------------
+                # Accept immediately if threshold reached
+                # ------------------------------------------
 
+                if evaluation.get("decision") == "ACCEPT":
                     break
 
             # ==================================================
-            # FINAL CANDIDATE DECISION
+            # NO VALID CANDIDATE
             # ==================================================
 
-            if (
-                selected is None
-                or selected_eval is None
-            ):
-
+            if selected is None or selected_eval is None:
                 raise RuntimeError(
-                    "All candidate images failed "
-                    "download or quality checks."
+                    "All candidate images failed quality/evaluation."
                 )
 
-            final_score = float(
-                selected_eval.get(
-                    "overall_score",
-                    0,
-                )
-                or 0
+            best_score = selected_eval.get(
+                "overall_score",
+                0,
             )
 
-            if (
-                selected_eval.get("decision")
-                != "ACCEPT"
-            ):
-
+            if selected_eval.get("decision") != "ACCEPT":
                 raise RuntimeError(
                     f"No candidate met AI threshold "
-                    f"{threshold}; best score "
-                    f"{final_score}."
+                    f"{threshold}; best score {best_score}."
                 )
 
-            row["AI Score"] = final_score
+            # ==================================================
+            # SAVE EVALUATION INFORMATION
+            # ==================================================
 
-            row["Source"] = (
-                selected.source
-            )
+            row["AI Score"] = best_score
+            row["Source"] = selected.source
+            row["Source URL"] = selected.page_url
+            row["License"] = selected.license
+            row["Author"] = selected.author
 
-            row["Source URL"] = (
-                selected.page_url
-            )
-
-            row["License"] = (
-                selected.license
-            )
-
-            row["Author"] = (
-                selected.author
+            progress(
+                f"Accepted image with AI score "
+                f"{best_score}; processing..."
             )
 
             # ==================================================
             # IMAGE PROCESSING
             # ==================================================
-
-            progress(
-                f"Accepted image with AI score "
-                f"{final_score}; processing..."
-            )
 
             path, metadata = process_image(
                 selected_bytes,
@@ -309,20 +256,17 @@ def run_agent(
             )
 
             row["Image Processed"] = "Yes"
-
             row["Output File"] = str(path)
-
-            row["Output Size Bytes"] = (
-                metadata["size_bytes"]
-            )
-
+            row["Output Size Bytes"] = metadata[
+                "size_bytes"
+            ]
             row["Dimensions"] = (
                 f"{metadata['width']}x"
                 f"{metadata['height']}"
             )
 
             # ==================================================
-            # GOOGLE DRIVE
+            # GOOGLE DRIVE UPLOAD
             # ==================================================
 
             if drive_folder_id:
@@ -333,76 +277,64 @@ def run_agent(
                     "Uploading to Google Drive..."
                 )
 
-                upload_error = None
+                upload_success = False
+                last_error = None
 
-                # Retry Drive upload up to 3 times.
-                for upload_attempt in range(3):
+                for attempt in range(1, 4):
 
                     try:
-
-                        drive_link = upload_file(
+                        row["Drive Link"] = upload_file(
                             path,
                             drive_folder_id,
                         )
 
-                        row["Drive Link"] = (
-                            drive_link
-                        )
-
                         row["Uploaded"] = "Yes"
+                        upload_success = True
 
-                        upload_error = None
+                        progress(
+                            "Google Drive upload successful."
+                        )
 
                         break
 
                     except Exception as exc:
 
-                        upload_error = exc
+                        last_error = exc
 
-                        if upload_attempt < 2:
+                        progress(
+                            f"Drive upload failed "
+                            f"(attempt {attempt}/3): "
+                            f"{exc}"
+                        )
 
-                            progress(
-                                "Drive upload failed; "
-                                "retrying..."
-                            )
-
+                        if attempt < 3:
                             time.sleep(
-                                2 * (
-                                    upload_attempt + 1
-                                )
+                                2 * attempt
                             )
 
-                if upload_error is not None:
-
+                if not upload_success:
                     raise RuntimeError(
                         "Google Drive upload failed "
                         f"after 3 attempts: "
-                        f"{upload_error}"
+                        f"{last_error}"
                     )
 
             # ==================================================
-            # SUCCESS
+            # FINAL STATUS
             # ==================================================
 
             if row["Uploaded"] == "Yes":
-
                 row["Status"] = "Success"
-
             else:
-
                 row["Status"] = (
                     "Processed - Drive not configured"
                 )
 
-            progress(
-                row["Status"]
-            )
+            progress(row["Status"])
 
         except Exception as exc:
 
             row["Error"] = str(exc)
-
-            row["Status"] = "Failed"
 
             progress(
                 f"Error: {exc}"
@@ -429,16 +361,19 @@ def run_agent(
     # ==========================================================
 
     if drive_folder_id:
-    from agent.drive import upload_file
 
-    progress("Uploading to Google Drive...")
+        try:
 
-    try:
-        row["Drive Link"] = upload_file(path, drive_folder_id)
-        row["Uploaded"] = "Yes"
+            from agent.drive import upload_report
 
-    except Exception as exc:
-        row["Uploaded"] = "No"
-        row["Error"] = f"DRIVE UPLOAD ERROR: {type(exc).__name__}: {exc}"
-        progress(f"Drive upload failed: {exc}")
-        raise
+            upload_report(
+                report_path,
+                drive_folder_id,
+            )
+
+        except Exception as exc:
+
+            # Keep local report even if Drive report upload fails.
+            pass
+
+    return rows, report_path
