@@ -17,27 +17,43 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def get_drive_service():
-    """
-    Cloud:
-        Uses Streamlit Secrets + Google Service Account.
-
-    Local:
-        Uses credentials.json + token.json OAuth.
-    """
 
     # =========================================================
-    # STREAMLIT CLOUD
+    # STREAMLIT CLOUD - SERVICE ACCOUNT
     # =========================================================
-    try:
-        if "gcp_service_account" in st.secrets:
 
+    if "gcp_service_account" in st.secrets:
+
+        try:
             service_account_info = dict(
                 st.secrets["gcp_service_account"]
             )
 
-            creds = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=SCOPES,
+            required_fields = [
+                "type",
+                "project_id",
+                "private_key",
+                "client_email",
+            ]
+
+            missing = [
+                field
+                for field in required_fields
+                if not service_account_info.get(field)
+            ]
+
+            if missing:
+                raise RuntimeError(
+                    "Missing Service Account fields in "
+                    f"Streamlit Secrets: {', '.join(missing)}"
+                )
+
+            creds = (
+                service_account.Credentials
+                .from_service_account_info(
+                    service_account_info,
+                    scopes=SCOPES,
+                )
             )
 
             return build(
@@ -47,39 +63,50 @@ def get_drive_service():
                 cache_discovery=False,
             )
 
-    except Exception as exc:
-        raise RuntimeError(
-            f"Google Drive cloud authentication failed: {exc}"
-        ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Streamlit Service Account authentication failed: {exc}"
+            ) from exc
 
     # =========================================================
-    # LOCAL DEVELOPMENT
+    # LOCAL DEVELOPMENT - OAUTH
     # =========================================================
+
     creds = None
 
     if TOKEN_FILE.exists():
+
         creds = Credentials.from_authorized_user_file(
             str(TOKEN_FILE),
             SCOPES,
         )
 
     if creds and creds.expired and creds.refresh_token:
+
         creds.refresh(Request())
 
     if not creds or not creds.valid:
 
         if not GOOGLE_CREDENTIALS_FILE.exists():
+
             raise FileNotFoundError(
-                "Google OAuth credentials not found. "
-                "Put credentials.json inside credentials/"
+                "Google Drive authentication is not configured. "
+                "Add [gcp_service_account] to Streamlit Secrets "
+                "for the deployed app, or put credentials.json "
+                "inside credentials/ for local development."
             )
 
-        flow = InstalledAppFlow.from_client_secrets_file(
-            str(GOOGLE_CREDENTIALS_FILE),
-            SCOPES,
+        flow = (
+            InstalledAppFlow
+            .from_client_secrets_file(
+                str(GOOGLE_CREDENTIALS_FILE),
+                SCOPES,
+            )
         )
 
-        creds = flow.run_local_server(port=0)
+        creds = flow.run_local_server(
+            port=0
+        )
 
         TOKEN_FILE.write_text(
             creds.to_json(),
@@ -94,7 +121,10 @@ def get_drive_service():
     )
 
 
-def upload_file(file_path: Path, folder_id: str) -> str:
+def upload_file(
+    file_path: Path,
+    folder_id: str,
+) -> str:
 
     service = get_drive_service()
 
@@ -119,10 +149,16 @@ def upload_file(file_path: Path, folder_id: str) -> str:
         .execute()
     )
 
-    return result.get("webViewLink") or result.get("id", "")
+    return (
+        result.get("webViewLink")
+        or result.get("id", "")
+    )
 
 
-def upload_report(file_path: Path, folder_id: str) -> str:
+def upload_report(
+    file_path: Path,
+    folder_id: str,
+) -> str:
 
     service = get_drive_service()
 
@@ -150,4 +186,7 @@ def upload_report(file_path: Path, folder_id: str) -> str:
         .execute()
     )
 
-    return result.get("webViewLink") or result.get("id", "")
+    return (
+        result.get("webViewLink")
+        or result.get("id", "")
+    )
