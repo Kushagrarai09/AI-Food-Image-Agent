@@ -301,10 +301,14 @@ def run_agent(
 
                         last_error = exc
 
+                        error_details = (
+                            f"{type(exc).__name__}: {repr(exc)}"
+                        )
+
                         progress(
                             f"Drive upload failed "
                             f"(attempt {attempt}/3): "
-                            f"{exc}"
+                            f"{error_details}"
                         )
 
                         if attempt < 3:
@@ -314,11 +318,10 @@ def run_agent(
 
                 if not upload_success:
                     raise RuntimeError(
-                        "Google Drive upload failed "
-                        f"after 3 attempts: "
-                        f"{last_error}"
+                        "Google Drive upload failed after 3 attempts: "
+                        f"{type(last_error).__name__}: "
+                        f"{repr(last_error)}"
                     )
-
             # ==================================================
             # FINAL STATUS
             # ==================================================
