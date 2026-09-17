@@ -429,19 +429,16 @@ def run_agent(
     # ==========================================================
 
     if drive_folder_id:
+    from agent.drive import upload_file
 
-        try:
+    progress("Uploading to Google Drive...")
 
-            from agent.drive import upload_report
+    try:
+        row["Drive Link"] = upload_file(path, drive_folder_id)
+        row["Uploaded"] = "Yes"
 
-            upload_report(
-                report_path,
-                drive_folder_id,
-            )
-
-        except Exception:
-            # Keep local report even if Drive report
-            # upload fails.
-            pass
-
-    return rows, report_path
+    except Exception as exc:
+        row["Uploaded"] = "No"
+        row["Error"] = f"DRIVE UPLOAD ERROR: {type(exc).__name__}: {exc}"
+        progress(f"Drive upload failed: {exc}")
+        raise
